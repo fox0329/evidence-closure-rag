@@ -1,0 +1,74 @@
+{
+  "date": "2026-10-18",
+  "file_count": 13,
+  "files": [
+    {
+      "bytes": 120,
+      "path": ".gitignore",
+      "sha256": "2923742feef74be6ad676070a3432ec626596831e2d7b7afa17449592c3ad9cb"
+    },
+    {
+      "bytes": 1064,
+      "path": "LICENSE",
+      "sha256": "8e4458acd49e882f23bf3ca59aaa38fadbc2df657c52582ed57b459d99cef094"
+    },
+    {
+      "bytes": 909,
+      "path": "README.md",
+      "sha256": "e53706c25b55db6294aa5ee541de6e651f280fe28e02462b05096abe489bfffd"
+    },
+    {
+      "bytes": 977,
+      "path": "THIRD_PARTY_NOTICES.md",
+      "sha256": "663b51913f21bd03117d58a234415c31b0e233da265d28fd61a9dc2358b4ead3"
+    },
+    {
+      "bytes": 290433,
+      "path": "data/privacyqa-v1.4/corpus.jsonl",
+      "sha256": "f96ce7a4aa679017594bf862d4de5a17a2082ba958c4fd0d431772d599f38491"
+    },
+    {
+      "bytes": 358493,
+      "path": "data/privacyqa-v1.4/dataset.jsonl",
+      "sha256": "d3d564f33d37339a25603d895c43886ab5aa0d908a908437007983ffdcf59d05"
+    },
+    {
+      "bytes": 2213,
+      "path": "data/privacyqa-v1.4/manifest.json",
+      "sha256": "225eb69ead6c5c2f356baedbb3009d8925f8c636e575677aff87c45567456a66"
+    },
+    {
+      "bytes": 19247,
+      "path": "metrics/public-paper-metrics-v1.json",
+      "sha256": "aefc715a30312ffffbfb1da4379f6e7dddb9ef7206af5155933512bc328237b5"
+    },
+    {
+      "bytes": 31054,
+      "path": "paper/paper.tex",
+      "sha256": "ec2aa601776eca994555d7f12f5ed3f616fcd1b640d2123cd392959cd216a8a6"
+    },
+    {
+      "bytes": 3430,
+      "path": "paper/paper_v1_tables.md",
+      "sha256": "38d9607127332672b2f3f20fd3ed90e91948b3d5b1e8eb1c7dedd7b80418efc9"
+    },
+    {
+      "bytes": 4805,
+      "path": "paper/refs.bib",
+      "sha256": "3faa9608de3883e8555af2f5334f057f2560dfcd60a0c84d7f62b517b1789c7c"
+    },
+    {
+      "bytes": 3123,
+      "path": "scripts/build_release_manifest.py",
+      "sha256": "c58371dcab6b12220db323b965b88d1c26089e13ad852da72d2d63ef89bda8d0"
+    },
+    {
+      "bytes": 9843,
+      "path": "scripts/generate_paper_tables_v1.py",
+      "sha256": "dde507bea91b507cf0210492499216683d088f5976ad60aea01a2fe71e7768d8"
+    }
+  ],
+  "license": "MIT",
+  "package": "evidence-closure-rag-arxiv-v1",
+  "schema_version": 2
+}

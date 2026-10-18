@@ -1,0 +1,371 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb,mathtools,amsthm}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{enumitem}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
+
+\newtheorem{definition}{Definition}
+\newtheorem{proposition}{Proposition}
+
+\newcommand{\method}{CGA-MEC}
+
+\title{Contract-Gated Answerability and Minimal Evidence Closure\\ for Auditable Retrieval-Augmented QA}
+
+\author{Anonymous Author(s)}
+\date{October 17, 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Retrieval-augmented generation (RAG) systems are usually evaluated as if relevance, answer correctness, and citation presence were sufficient. In regulated quality, compliance, and policy corpora, however, a lexically similar clause may belong to a different product scope, revision, authority, or responsibility boundary. Moreover, a user may request a final conformity judgment that the system is not permitted to render even when relevant text exists. We formulate such requests as a joint decision over an \emph{output contract}, a \emph{minimal evidence closure}, and an \emph{auditable degradation certificate}. We instantiate this formulation as Contract-Gated Answerability with Gap-Driven Minimal Evidence Closure (\method{}): requests are first mapped to permissible output contracts; evidence requirements are made explicit; retrieval is expanded only for uncovered requirements; and a deterministic selector produces a locally minimal, hard-constraint-compliant evidence set. When closure fails, the system refuses or degrades with a certificate instead of filling the gap from model memory. We further introduce Closure-Ready knowledge governance, which admits a clause to structured reasoning only when it matches a decidable structural archetype and otherwise restricts it to passage-level citation. Experiments use four deliberately separated evidence layers: 250 controlled held-out cases, 147 public PrivacyQA cases, a 20-case public relation-closure subset, and extraction/routing pilots on two proprietary quality-standard corpora. The controlled layer shows large, statistically significant gains over deterministic RAG baselines. The public-gold layer also exposes an important negative result: a stricter closure contract reduces false answers but causes a false-refusal collapse. The real-standard pilots motivate gating by showing that universal structural parsing fails. Together, these results do not establish domain-independent state of the art; they define a reproducible, auditable operating point and a falsifiable evaluation protocol for high-constraint RAG.
+\end{abstract}
+
+\noindent\textbf{Keywords:} retrieval-augmented generation; selective answering; evidence sufficiency; citation attribution; auditability; regulatory question answering; negative results.
+
+\section{Introduction}
+\label{sec:introduction}
+
+A conventional RAG pipeline retrieves passages similar to a query and asks a generator to produce an answer with citations. This loop works well when the main risks are topical relevance and factual support. It is insufficient for closed corpora in which documents encode enforceable obligations. Five boundaries recur in such settings:
+
+\begin{enumerate}[nosep,leftmargin=*]
+  \item \textbf{Scope.} A rule may apply only to specified products, phases, roles, or task types.
+  \item \textbf{Version.} Clauses from different revisions may conflict, and an obsolete clause cannot silently answer a current-version question.
+  \item \textbf{Authority.} Explaining a rule, scoring conformity, and authorizing release are not equivalent acts.
+  \item \textbf{Evidence composition.} Conditions, exceptions, alternatives, and temporal validity may be distributed over several clauses.
+  \item \textbf{Output permission.} A request can be textually answerable but procedurally forbidden as a system-rendered final judgment.
+\end{enumerate}
+
+These boundaries imply three distinctions that an accuracy score cannot express: relevance is not answerability, citation existence is not citation correctness, and answer correctness is not output-contract correctness. Asking ``Can this design pass review?'' may permit a rule explanation but not an autonomous pass/fail verdict. Conversely, if a required condition is absent from the authorized corpus, a safe system should emit a refusal certificate rather than use parametric memory.
+
+Prior work has studied attribution~\citep{gao2023alce,bohnet2022attributed,ru2024ragchecker,pipitone2024legalbench}, selective generation and self-reflection~\citep{asai2023selfrag,qiu2026surerag,zhao2026grace}, contextual sufficiency and pre-generation gap detection~\citep{joren2024sufficient,chen2026rinse}, iterative evidence acquisition~\citep{li2026s2g,asl2025fairrag,liu2026a2rag}, and legal or version-sensitive retrieval~\citep{ju2026citationclosure,demir2026citationsmislead,huwiler2025versionrag}. We do not claim any single component is new. Our object of study is their joint interaction under three constraints: (i) scope, version, authority, and output permission are hard gates; (ii) no runtime human confirmation is available; and (iii) every final behavior must be auditable after the fact.
+
+\subsection{Research questions and contributions}
+
+We ask:
+
+\begin{description}[leftmargin=1.2em,itemsep=0pt]
+  \item[RQ1.] Does explicit contract gating plus minimal evidence closure reduce false answers, incorrect citations, and missing audit artifacts in a controlled setting?
+  \item[RQ2.] What safety--usability tradeoff appears on public human-labeled data when closure requirements become stricter?
+  \item[RQ3.] Can knowledge-base readiness labels prevent unsupported structural conclusions when real regulatory parsing is unreliable?
+\end{description}
+
+The paper makes four bounded contributions:
+
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{A joint decision formulation.} We represent a request as selecting an output contract, behavior, minimal authorized evidence set, and certificate, rather than only an answer and citations.
+  \item \textbf{The \method{} mechanism.} We give a deterministic pipeline for contract gating, requirement extraction, gap-driven retrieval, greedy local closure, constrained generation, and fail-closed degradation.
+  \item \textbf{Closure-Ready governance.} We separate evidence that is permitted to support structured conclusions from evidence that may only be quoted. This governance is motivated by real extraction failures.
+  \item \textbf{A layered auditable evaluation protocol.} We report controlled, public-gold, real-domain, and development-smoke evidence separately, including negative results and preregistered gates.
+\end{enumerate}
+
+We do not claim universal state of the art, complete replication of published systems, cross-domain generalization, or product-level end-to-end improvement.
+
+\section{Related Work}
+\label{sec:related-work}
+
+\subsection{Attribution and citation evaluation}
+
+ALCE studies automatic evaluation and generation of cited responses~\citep{gao2023alce}; Attributed QA models and evaluates attribution to retrieved evidence~\citep{bohnet2022attributed}. RAGChecker provides fine-grained diagnosis of RAG behavior~\citep{ru2024ragchecker}, and LegalBench-RAG targets attribution in legal text~\citep{pipitone2024legalbench}. These works show that a citation string is not enough: the cited context must support the claim. \method{} goes one step further by making citations part of a closure certificate. Evidence cannot enter the final package merely because it is similar; it must satisfy hard metadata constraints and cover an explicitly declared requirement.
+
+\subsection{Selective answering and abstention}
+
+Self-RAG trains a model to control retrieval and critique its own generation through reflection tokens~\citep{asai2023selfrag}. SURE-RAG treats sufficiency and uncertainty as set-level evidence-verification signals~\citep{qiu2026surerag}. GRACE uses reinforcement learning to improve grounded response and abstention~\citep{zhao2026grace}. Our approach differs in two ways. First, closure is a checkable property of an authorized evidence set, not solely a learned model preference. Second, sufficiency is separated from permission: even sufficient evidence cannot authorize a forbidden final ruling.
+
+\subsection{Sufficiency, gaps, and iterative retrieval}
+
+Sufficient Context distinguishes answerable and unanswerable context~\citep{joren2024sufficient}. RINSE detects evidence gaps before generation and emphasizes that relevance is not sufficiency~\citep{chen2026rinse}. FAIR-RAG, S2G-RAG, and A2RAG refine or expand evidence for complex questions~\citep{asl2025fairrag,li2026s2g,liu2026a2rag}. These methods motivate iterative evidence construction. \method{} uses iteration for a different endpoint: not to increase the generator's willingness to answer, but to decide whether predefined requirements can be closed. An unresolved required gap causes refusal rather than another generation attempt.
+
+\subsection{Regulatory and version-sensitive QA}
+
+Recent work studies citation closure for regulatory compliance~\citep{ju2026citationclosure}, claim-level legal attribution~\citep{demir2026citationsmislead}, and version-aware retrieval over evolving documents~\citep{huwiler2025versionrag}. Our setting is narrower but couples these concerns: a single interaction must simultaneously decide whether the requested output is allowed, whether version/scope/authority constraints hold, and what evidence is minimally sufficient. We also include knowledge-base readiness as an explicit object of evaluation.
+
+\section{Problem Formulation}
+\label{sec:problem}
+
+Let $\mathcal{K}$ be an authorized evidence collection. Each evidence item
+\[
+e=(\mathit{id},\mathit{source},\mathit{locator},\mathit{text},s,v,a,d,h,m)
+\]
+carries scope $s$, version $v$, authority $a$, decision scope $d$, source hash $h$, and evidence mode $m$. The mode $m$ has two governed values:
+\begin{itemize}[nosep]
+  \item \texttt{structured\_frames}: may support frame-level explanations, subject to the output contract;
+  \item \texttt{passage\_only}: may support verbatim or tightly paraphrased passage evidence, but may not support structural rule conclusions or final conformity judgments.
+\end{itemize}
+
+A request $x=(q,u,s_x,v_x,\tau)$ contains query $q$, user/session role $u$, requested scope $s_x$, version constraint $v_x$, and requested task type $\tau$. A policy selects an output contract
+\[
+c\in\{\textsf{answer},\textsf{explain},\textsf{clarify},\textsf{task-card},\textsf{refuse}\}.
+\]
+The system returns
+\[
+(c,b,y,E^\star,z)=\pi(x;\mathcal{K}),
+\]
+where $b$ is the executed behavior, $y$ is the rendered response or task card, $E^\star$ is the selected evidence, and $z$ is an audit certificate.
+
+\begin{definition}[Requirement closure]\label{def:closure}
+For contract $c$, let $\mathcal{R}(x,c)=\{r_1,\ldots,r_m\}$ be required evidence requirements. An authorized set $E\subseteq\mathcal{K}$ closes $\mathcal{R}$ iff every required $r$ has at least one $e\in E$ such that
+\[
+\mathit{covered}(r,e) \iff
+\mathit{HardCheck}(r,e,s_x,v_x,a,d)\ \wedge\
+\mathit{Support}(r,e)\ge\tau_r .
+\]
+\end{definition}
+
+\begin{definition}[Locally minimal closure]\label{def:minimal}
+A closure $E^\star$ is locally minimal if, for every $e\in E^\star$, $E^\star\setminus\{e\}$ no longer closes $\mathcal{R}(x,c)$.
+\end{definition}
+
+\begin{proposition}\label{prop:np-hard}
+Given a finite requirement set and candidate evidence with binary coverage, deciding whether there exists an evidence set of cardinality at most $B$ that closes all requirements is NP-complete.
+\end{proposition}
+
+\begin{proof}
+Membership in NP is immediate from a certificate consisting of at most $B$ evidence identifiers. For hardness, reduce \textsc{Set Cover}: each universe element becomes a requirement, each set becomes an evidence item, and $\mathit{covered}(r,e)$ holds exactly when element $r$ belongs to set $e$. A cover of size at most $B$ exists iff a closure of size at most $B$ exists.
+\end{proof}
+
+The runtime selector therefore does not claim global optimality. It returns a deterministic locally minimal set and records deletion checks in the certificate.
+
+\section{\method{}}
+\label{sec:method}
+
+\subsection{Runtime pipeline}
+
+Algorithm~\ref{alg:cgamec} summarizes the pipeline. The contract policy runs before evidence synthesis and uses only request metadata, read-only corpus metadata, and declared permissions. It never uses gold labels or generator confidence. The contract priority is fixed:
+\[
+\textsf{out-of-scope} >
+\textsf{forbidden-output} >
+\textsf{version-conflict} >
+\textsf{no-evidence} >
+\textsf{explain} >
+\textsf{answer}.
+\]
+
+\begin{algorithm}[t]
+\caption{\method{} runtime decision}
+\label{alg:cgamec}
+\begin{algorithmic}[1]
+\Require request $x$; authorized evidence collection $\mathcal{K}$
+\State $c,z_0 \gets \Call{ContractPolicy}{x}$
+\If{$c=\textsf{out-of-scope}$ \textbf{or} $c=\textsf{forbidden-output}$}
+  \State \Return $(c,b,y,\emptyset,\Call{Certificate}{z_0})$
+\EndIf
+\State $E_0 \gets \Call{Retrieve}{q(x),\mathcal{K},\text{hard constraints}}$
+\State $\mathcal{R} \gets \Call{ExtractRequirements}{x,c,E_0}$
+\State $G \gets \{r\in\mathit{Required}(\mathcal{R}): \neg\Call{Covered}{r,E_0}\}$
+\State $C_g \gets \Call{GapRetrieve}{G,\mathcal{K},\text{hard constraints}}$
+\State $E^\star \gets \Call{GreedyClosure}{E_0\cup C_g,\mathcal{R},\text{hard constraints}}$
+\If{$E^\star$ closes $\mathcal{R}$}
+  \State $(y,E^\star)\gets\Call{ConstrainedGenerate}{x,c,E^\star}$
+  \If{\Call{OutputGate}{$y,E^\star,c$} fails}
+    \State $(c,y)\gets\Call{SafeDegrade}{\text{output-gate failure}}$
+  \EndIf
+\Else
+  \State $(c,y)\gets\Call{SafeDegrade}{\mathit{Gap}(E^\star)}$
+\EndIf
+\State $z \gets \Call{Certificate}{c,\mathcal{R},E^\star,\mathit{deletions},\mathit{reasons},\mathit{hashes}}$
+\State \Return $(c,b,y,E^\star,z)$
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Gap-driven retrieval}
+
+For current evidence $E_0$, the unresolved set is
+\[
+\mathit{Gap}(E_0)=\{r\in\mathit{Required}(\mathcal{R}): \neg \exists e\in E_0,\mathit{covered}(r,e)\}.
+\]
+Each gap receives at most two targeted queries composed from requirement text, structural anchors, and task type; the system does not simply repeat the original query. New candidates must pass scope, version, authority, evidence-mode, and anchor checks before entering the closure pool. If a required gap remains unresolved after this bounded expansion, the system marks the request insufficient and does not retrieve unrelated context to make the prompt appear fuller.
+
+\subsection{Minimal closure and constrained generation}
+
+The selector filters unauthorized candidates, orders the remaining items by support, anchor match, version compatibility, and identifier, and greedily adds evidence only when it covers at least one unresolved requirement. It then attempts reverse-order deletion. The result is locally minimal in the sense of Definition~\ref{def:minimal}.
+
+The generator may cite only $E^\star$. The output gate checks that every claim maps to evidence, all citations belong to $E^\star$, required requirements remain covered, structural anchors agree, no forbidden final ruling appears, and certificate fields are complete. Any failure causes refusal, clarification, or a task-card contract. The certificate records the contract, requirement states, selected and discarded evidence, closure outcome, degradation reason, and source hashes. It is an auditable decision record, not chain-of-thought.
+
+\section{Closure-Ready Knowledge Governance}
+\label{sec:governance}
+
+Real quality-standard text often combines an obligation in a parent sentence with numbered properties, passive state descriptions, inherited modality, or multi-object action chains. Our initial attempt to parse all such clauses as obligations failed on independent held-out data (Section~\ref{sec:experiments}). Instead of treating this as a prompt-tuning problem, Closure-Ready makes reliability an ingestion-time property.
+
+\subsection{Readiness gate}
+
+The current deterministic gate admits only three decidable archetypes: parent-property lists, declarative property lists, and duty-action lists. A clause becomes \texttt{structured\_frames} only when its parent-child modality, list structure, and action boundaries are decidable. Clauses with fewer than two list items, orphan lists, mixed modalities, continuous action chains, or unstable scope become \texttt{passage\_only}. Rejection does not remove text from retrieval; it lowers the authorized conclusion level.
+
+\subsection{Knowledge-base invariants}
+
+The governance layer enforces the following invariants: \texttt{passage\_only} clauses have zero frames; \texttt{structured\_frames} clauses have non-empty frames; conclusion permission equals closure readiness; clause content hashes match the database record; source ingestion is atomic; and passage packages carry a recomputable whole-package hash. A schema or hash violation fails closed. Thus, uncertain parsing cannot masquerade as structured legal fact.
+
+\subsection{Retrieval routing}
+
+Retrieval first locates legal clauses. If the clause is readiness-gated and the request matches a title anchor or a specific frame, structured frames may be expanded. If the clause is gated but no frame matches, or if the clause never passed the gate, only passage evidence is returned. Passage answers may quote and locate text but cannot produce frame-level obligation, authorization, or conformity conclusions. This route deliberately avoids the assumption that structured representations are always preferable.
+
+\section{Auditable Evaluation Protocol}
+\label{sec:protocol}
+
+A single composite accuracy score can hide opposite risks. We therefore require separate metrics for output contract, false answers, false refusals, citation precision and recall, unsupported citations, evidence closure, minimality violations, unauthorized frame conclusions, certificate completeness, runtime calls, latency, and failure attribution. Three interpretation rules are fixed: a related-but-nonanswer is not an answer; certificate completeness does not imply usefulness; and more citations do not imply a more sufficient evidence set.
+
+Each evidence layer declares its label source, held-out status, preregistration status, one-pass rule, hashes, runtime constraints, and permitted claims. A consumed held-out set is not reused for threshold tuning. If a gate fails, the next development iteration must use new development data or a newly frozen held-out set.
+
+\section{Experiments}
+\label{sec:experiments}
+
+\subsection{Evidence layers}
+
+Table~\ref{tab:layers} summarizes the evidence. We intentionally do not merge them into one leaderboard. The mechanical set tests the mechanism; PrivacyQA tests behavior on public human relevance labels; the real-standard pilots test governance under difficult structural text; and the routing smoke is a development-only viability check.
+
+\begin{table}[t]
+\centering
+\caption{Evidence layers and claim boundaries.}
+\label{tab:layers}
+\small
+\begin{tabular}{@{}lp{0.7cm}p{2.6cm}p{3.6cm}p{3.9cm}@{}}
+\toprule
+Layer & $N$ & Labels & Supports & Does not support \\
+\midrule
+Mechanical held-out & 250 & Deterministic mechanism labels & Contract/closure mechanism & Human semantic adequacy or real LLM generalization \\
+PrivacyQA v7 & 147 & Public relevance majority & Safety--refusal Pareto analysis & Answer sufficiency or domain transfer \\
+PrivacyQA P5 & 20 & Public labels plus relation contract & Safety/certificate transfer & Coverage success \\
+Real-standard extraction & 30/11 & Structural pilot labels & Universal parsing failure & Impossibility of all parsing \\
+Closure-Ready smoke & 13 & Offline AI-assisted reading & Three-path routing viability & Held-out or product effectiveness \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Controlled mechanism validation (RQ1)}
+
+The 250-item mechanical held-out contains controlled terms, explicit locators, near-neighbor distractors, and absent-evidence questions. All RAG baselines are deterministic mechanism adaptations rather than original end-to-end systems. Ordinary and hybrid RAG answer every retrieved-case question and therefore incur false answers on absence cases. The rule-only baseline refuses unless an exact locator is found and therefore has high false refusal. \method{}'s \texttt{v10-full} configuration closes 248/250 evidence sets and emits complete certificates for 250/250.
+
+\begin{table}[t]
+\centering
+\caption{Mechanical held-out results. FA=false answer; FR=false refusal; CP/CR=citation precision/recall.}
+\label{tab:mechanical}
+\small
+\begin{tabular}{@{}lrrrrrrr@{}}
+\toprule
+Method & Behavior & FA & FR & CP & CR & Closure & Certificate \\
+\midrule
+Ordinary RAG (det.) & .840 & .160 & .000 & .306 & .919 & .000 & .000 \\
+Hybrid RAG (det.) & .840 & .160 & .000 & .298 & .895 & .000 & .000 \\
+Self-RAG style (det.) & .840 & .160 & .000 & .298 & .895 & .000 & .000 \\
+Rule-only & .316 & .000 & .684 & 1.000 & .186 & 1.000 & .000 \\
+\method{} v10-full & 1.000 & .000 & .000 & .990 & .990 & .992 & 1.000 \\
+Concept-closure v1 & 1.000 & .000 & .000 & 1.000 & 1.000 & 1.000 & 1.000 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Paired tests use the 250 held-out items. Against ordinary RAG, \method{} improves behavior accuracy by $.160$ points (McNemar $p=1.8\times10^{-12}$), closure by $.992$ points ($p<1.1\times10^{-74}$), and certificate completeness by $1.000$ points ($p<1.1\times10^{-75}$); bootstrap resampling gives a citation-precision difference of $.734$ (95\% CI $[.713,.753]$). The same directional results hold for hybrid and Self-RAG-style adaptations. These statistics validate the controlled mechanism, not semantic adequacy in natural user requests.
+
+\subsection{Public-gold negative result (RQ2)}
+
+We adapted 147 items from PrivacyQA~\citep{ravichander2019privacyqa}: 100 answerable and 47 refusable under the public relevance-majority protocol. These labels are not complete answer-sufficiency judgments. The v7 contract reduced false answers from 16/47 to 4/47 (McNemar $p=.0018$), but increased false refusals from 40/100 to 71/100 (McNemar $p<10^{-8}$). The preregistered gate therefore rejected the candidate.
+
+\begin{table}[t]
+\centering
+\caption{PrivacyQA v7 one-pass gate. The candidate was rejected without tuning on this set.}
+\label{tab:privacyqa}
+\small
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Configuration & Behavior & False answer & False refusal & Micro citation P \\
+\midrule
+v4 reference & 91/147 & 16/47 & 40/100 & .2368 \\
+v7 candidate & 72/147 & 4/47 & 71/100 & .1515 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+This is a key negative result. Stricter lexical focus can intercept broad false support, but a brittle requirement representation converts safety gains into refusal collapse. Closure is useful only when requirements are decodable and evidence coverage is assessable; otherwise strict gating produces a superficial safety win.
+
+A separate 20-item one-pass P5 subset tests relation-closure transfer. On five no-relevant items, zero produced grounded answers and all five had empty selected evidence. Three grounded citations all fell in public gold, and all 17 non-answer gap certificates were structurally valid. However, only 3/15 publicly answerable items produced grounded answers, so the result supports safety and certificate transfer, not coverage or cross-domain generalization.
+
+\subsection{Real-standard extraction and governance (RQ3)}
+
+On an independent 30-item real-standard structural pilot, the v1 relation extractor produced 7 exact matches, precision $.389$, and recall $.233$, despite perfect development-set exact match. On an 11-clause locked scope-extraction set, v6 achieved precision $.167$, recall $.030$, and semantic F1 $.051$. These failures were recurrent and structural: numbered lists inherited modality, one sentence contained multiple obligations and objects, passive predicates did not match action lexicons, and narrative chains lacked stable boundaries.
+
+\begin{table}[t]
+\centering
+\caption{Real-standard extraction pilots. Results are held-out negative results, not parser-tuning records.}
+\label{tab:extraction}
+\small
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+Extractor & $N$ & Match & Precision & Recall & F1 \\
+\midrule
+Structured relation v1 & 30 & 7 & .389 & .233 & --- \\
+Scope extraction v6 & 11 & 1 action & .167 & .030 & .051 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+These results motivated Closure-Ready gating rather than another parser iteration. In a 12-clause Standard A development pool, the gate admitted 8 clauses as structured and demoted 4 to passage-only. In an 11-clause Standard B held-out pool, all clauses demoted to passage-only. The accepted development subset reached frame F1 $.944$, but this number applies only to admitted decidable archetypes.
+
+A 13-item revised routing smoke used 8 structured, 4 passage-only, and 1 out-of-domain item. All 13 contract routes were correct; false answers, false refusals, and unauthorized frame conclusions were zero. Overall citation precision was $.917$. One passage-only ambiguity occurred because two identically titled notes could not be disambiguated without a clause number; the correct behavior is clarification rather than guessed citation. Because labels were offline AI-assisted and the set is small, this layer supports mechanism viability only.
+
+\subsection{Engineering contract}
+
+An independent Rust module mirrors the Closure-Ready schema, atomic ingestion, content hashes, evidence modes, and passage-package hashes; 13 targeted Rust tests pass. The Python research prototype passes 579 tests. These results establish contract verifiability, not product integration or user-facing effectiveness.
+
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{An auditable operating point, not a leaderboard claim}
+
+The controlled experiment shows what the mechanism can enforce. PrivacyQA shows what happens when requirement construction is too brittle. Real-standard extraction shows why all clauses should not be forced into structured representations. These findings occupy different evidence layers and must be read together. The contribution is a falsifiable design and evaluation discipline, not a universal winner.
+
+\subsection{Governance as the response to uncertainty}
+
+When parsing is uncertain, a system has two honest options: quote the passage with reduced conclusion authority, or refuse a structural conclusion with a reason. Closure-Ready encodes this choice in the knowledge base itself. Consequently, retrieval score alone cannot upgrade evidence into a permission level that ingestion did not grant.
+
+\subsection{No runtime confirmation does not mean no human role}
+
+All reported runtime paths use zero per-output human confirmation. Humans remain essential offline: constructing and auditing gold sets, governing knowledge-base readiness, reviewing samples, and processing downstream task cards. The claim is limited to no interactive human click as a runtime safety gate.
+
+\section{Limitations}
+\label{sec:limitations}
+
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Controlled labels.} The 250-item set validates mechanism behavior, not natural paraphrase or expert semantic adequacy.
+  \item \textbf{Deterministic baselines.} Ordinary, hybrid, and Self-RAG-style baselines are controlled adaptations, not full reproductions of published systems.
+  \item \textbf{Public labels.} PrivacyQA relevance votes are not complete answer-sufficiency labels.
+  \item \textbf{Small transfer set.} The 20-item P5 layer is a weak-signal safety and certificate test.
+  \item \textbf{Proprietary-standard pilots.} Real-standard labels are small pilot annotations; one smoke layer uses offline AI-assisted structural reading.
+  \item \textbf{Limited gate coverage.} The current readiness gate rejected every clause in the Standard B held-out pool. This is safe but shows low structural coverage.
+  \item \textbf{No product integration.} Rust contracts are not yet in the product retrieval or generation main path.
+  \item \textbf{Efficiency.} The concept-closure variant costs more than v10-full and is reported as a tradeoff, not an efficiency contribution.
+  \item \textbf{Unauthorized-output ceiling.} Early adversarial sets saturated the unauthorized-output metric at zero, reducing discriminative power.
+  \item \textbf{Domain bias.} Decidable archetypes come from Chinese quality-standard text and do not automatically transfer to law, medicine, or other languages.
+\end{enumerate}
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+High-constraint closed-corpus QA should ask not only ``what answer is likely?'' but also ``which output contract is permitted?'', ``which minimal authorized evidence closes the request?'', and ``what certificate is left when closure fails?'' \method{} turns these questions into deterministic gates, targeted retrieval, local minimal closure, constrained generation, and fail-closed certificates. Closure-Ready governance extends the same discipline to knowledge construction: evidence declares the conclusions it may support.
+
+Our evidence is deliberately layered. The controlled layer supports the mechanism. The public-gold layer rejects one strict closure policy because of false-refusal collapse. Real-standard pilots show that universal structural parsing is unreliable and motivate readiness gating. These are not weaknesses hidden behind a benchmark score; they are the empirical boundary within which this auditable approach is currently justified. Future work needs preregistered human-sufficiency labels, larger held-out readiness sets, second-domain replication, product shadow deployment, and cost-aware closure selection.
+
+\bibliographystyle{plainnat}
+\bibliography{refs}
+
+\appendix
+
+\section{Reproducibility and artifact boundary}
+\label{app:repro}
+
+The public artifact contains metric-only JSON, a deterministic table generator, PrivacyQA v1.4 data and manifest, LaTeX source, MIT license, and third-party notices. It does not contain proprietary standard full text, OCR intermediates, controlled knowledge-base archives, complete failure records, traces, local databases, model weights, keys, logs, machine-local paths, or internal research implementation.
+
+\section{Certificate fields}
+\label{app:certificate}
+
+A final certificate records: request and contract identifiers; contract-policy reason; required requirement states; selected evidence identifiers, locators, scopes, versions, authorities, and hashes; discarded candidate reasons; targeted retrieval calls; closure result; minimality-check result; citation map; unsupported or unresolved points; degradation reason; output-gate result; and package hash. Missing mandatory fields cause fail-closed behavior.
+
+\end{document}

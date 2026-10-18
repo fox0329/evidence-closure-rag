@@ -1,0 +1,49 @@
+{
+  "adapter_reference_url": "https://github.com/zeroentropy-ai/legalbenchrag/blob/master/legalbenchrag/generate/generate_privacy_qa.py",
+  "adapter_version": "privacyqa-public-pilot-v1.4-clean-heldout",
+  "availability_and_selection": {
+    "available_answerable": 154,
+    "available_multi_gold": 98,
+    "available_one_gold": 56,
+    "available_unanswerable": 47,
+    "selected_answerable_multi_gold": 80,
+    "selected_answerable_one_gold": 20,
+    "selected_unanswerable": 47
+  },
+  "chunk_size": 500,
+  "dataset_id": "privacyqa-public-pilot-v1.4-clean-heldout",
+  "gold_span_rules": [
+    "PrivacyQA annotations are copied without relabelling.",
+    "A sentence is selected when at least half of active annotators marked it relevant.",
+    "Adjacent selected spans are merged when separated by at most two characters.",
+    "For majority-relevant queries, the highest-ranked sentence is retained even when below the threshold.",
+    "A query with no majority-relevant sentence is mapped to refusal with empty gold (pilot protocol extension).",
+    "Queries with more than two missing annotations on any sentence are excluded."
+  ],
+  "license": "MIT",
+  "license_url": "https://github.com/AbhilashaRavichander/PrivacyQA_EMNLP/blob/master/LICENSE",
+  "outputs_sha256": {
+    "corpus": "f96ce7a4aa679017594bf862d4de5a17a2082ba958c4fd0d431772d599f38491",
+    "dataset": "d3d564f33d37339a25603d895c43886ab5aa0d908a908437007983ffdcf59d05"
+  },
+  "quotas": {
+    "answerable": 100,
+    "multi_gold": 80,
+    "one_gold": 20,
+    "unanswerable": 47
+  },
+  "schema_version": 1,
+  "seed": "privacyqa-public-pilot-v1.4-clean-heldout:balanced-answerability",
+  "selected_total": 147,
+  "selection_exclusions": {
+    "allowed_document_ids": null,
+    "excluded_identity_count": 74
+  },
+  "source_sha256": "3822409246bfc733cdb17bb7bea85a92d906d76dae48763350c3306ee24a924a",
+  "source_snapshot": {
+    "kind": "complete_file",
+    "source_full_sha256": "3822409246bfc733cdb17bb7bea85a92d906d76dae48763350c3306ee24a924a"
+  },
+  "source_url": "https://raw.githubusercontent.com/AbhilashaRavichander/PrivacyQA_EMNLP/master/data/policy_test_data.csv",
+  "status": "external_public_gold_static_adapter_not_method_evaluation"
+}

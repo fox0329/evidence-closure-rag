@@ -1,0 +1,11 @@
+.DS_Store
+.DS_Store
+__pycache__/
+*.pyc
+.qa/
+paper/*.aux
+paper/*.log
+paper/*.out
+paper/*.bbl
+paper/*.blg
+paper/paper.pdf
